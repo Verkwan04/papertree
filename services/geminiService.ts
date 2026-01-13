@@ -20,44 +20,12 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
   });
 };
 
-/**
- * Main Reasoning Engine for PaperTree.
- * Uses Gemini 3 Flash to analyze input + Google Search to find related papers/links.
- */
-export const generateKnowledgeGraph = async (input: string, file?: File, userApiKey?: string): Promise<GraphData> => {
-  // Priority: 1. Passed Argument (User Input) -> 2. LocalStorage -> 3. Environment Variable
-  let apiKey = userApiKey;
-  
-  if (!apiKey && typeof window !== 'undefined') {
-      apiKey = localStorage.getItem('gemini_api_key') || "";
-  }
-  
-  if (!apiKey) {
-     try {
-        if (typeof process !== "undefined" && process.env) {
-            apiKey = process.env.API_KEY || "";
-        }
-     } catch (e) {
-        // ignore process error
-     }
-  }
-
-  if (!apiKey) {
-      throw new Error("MISSING_API_KEY");
-  }
-
-  // Initialize client with the determined key
-  const ai = new GoogleGenAI({ apiKey: apiKey });
-  
-  const parts: any[] = [];
-  
-  // System Instruction to enforce JSON structure and Search usage
-  const systemInstruction = `
+const SYSTEM_PROMPT_CORE = `
     You are "PaperTree", an advanced academic research assistant specialized in mapping the EVOLUTION of ideas.
     
     YOUR GOAL:
-    1. Analyze the user's input (a specific paper PDF, a list of URLs, or a research topic).
-    2. USE GOOGLE SEARCH to find the input paper (if a PDF is provided) to get its URL, AND find 3-5 HIGHLY RELEVANT related papers.
+    1. Analyze the user's input (a research topic).
+    2. Find 3-5 HIGHLY RELEVANT related papers based on your knowledge.
     3. Look for specific relationships to build a CHRONOLOGICAL EVOLUTION MAP:
        - Ancestors (Papers that influenced this work).
        - Successors (Papers that cite or improve this work).
@@ -66,7 +34,7 @@ export const generateKnowledgeGraph = async (input: string, file?: File, userApi
     CRITICAL RULE FOR LINKS:
     - The 'source' MUST be the OLDER paper.
     - The 'target' MUST be the NEWER paper.
-    - The 'description' MUST be VERY SHORT (2-5 words max) for visualization labels (e.g., "Uses Transformer", "Improves Accuracy", "Contradicts Results").
+    - The 'description' MUST be VERY SHORT (2-5 words max) for visualization labels.
 
     OUTPUT SCHEMA (JSON ONLY):
     {
@@ -94,13 +62,104 @@ export const generateKnowledgeGraph = async (input: string, file?: File, userApi
         } 
       ]
     }
+`;
 
-    CONSTRAINTS:
-    - You MUST return valid JSON.
-    - You MUST try to populate the "url" field for every node using Google Search results.
-    - Do not invent papers. Only include real papers found via search or provided in context.
-  `;
+/**
+ * Handle OpenAI / DeepSeek Requests via Standard Fetch
+ */
+const generateWithOpenAICompatible = async (
+    input: string, 
+    apiKey: string, 
+    baseUrl: string, 
+    model: string
+): Promise<GraphData> => {
+    
+    const messages = [
+        { role: "system", content: SYSTEM_PROMPT_CORE + "\n\n IMPORTANT: Return ONLY valid JSON. No Markdown formatting." },
+        { role: "user", content: `Research Topic: ${input}. Build an evolutionary knowledge graph.` }
+    ];
 
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: messages,
+            temperature: 0.1, // Low temp for JSON stability
+            max_tokens: 4000
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API Error ${response.status}: ${errorData?.error?.message || response.statusText}`);
+    }
+
+    const json = await response.json();
+    const content = json.choices[0]?.message?.content || "{}";
+    
+    return parseAndSanitize(content);
+};
+
+const parseAndSanitize = (text: string): GraphData => {
+     let cleanText = text;
+     // Clean Markdown blocks
+    if (cleanText.includes("```json")) {
+        cleanText = cleanText.replace(/```json/g, "").replace(/```/g, "");
+    } else if (cleanText.includes("```")) {
+        cleanText = cleanText.replace(/```/g, "");
+    }
+    cleanText = cleanText.trim();
+
+    const data = JSON.parse(cleanText) as GraphData;
+    
+    if (!data.nodes || !Array.isArray(data.nodes)) data.nodes = [];
+    if (!data.links || !Array.isArray(data.links)) data.links = [];
+
+    data.nodes.forEach(node => {
+        node.id = String(node.id);
+        node.year = parseInt(String(node.year)) || new Date().getFullYear();
+    });
+
+    const nodeIds = new Set(data.nodes.map(n => n.id));
+    data.links = data.links.filter(link => {
+        const sourceValid = nodeIds.has(String(link.source));
+        const targetValid = nodeIds.has(String(link.target));
+        return sourceValid && targetValid;
+    });
+
+    return data;
+};
+
+/**
+ * Main Reasoning Engine
+ */
+export const generateKnowledgeGraph = async (
+    input: string, 
+    file?: File, 
+    apiKey?: string, 
+    provider: 'gemini' | 'openai' | 'deepseek' = 'gemini'
+): Promise<GraphData> => {
+
+  if (!apiKey) throw new Error("MISSING_API_KEY");
+
+  // 1. OpenAI Handler
+  if (provider === 'openai') {
+      return generateWithOpenAICompatible(input, apiKey, "https://api.openai.com/v1", "gpt-4o");
+  }
+
+  // 2. DeepSeek Handler
+  if (provider === 'deepseek') {
+      return generateWithOpenAICompatible(input, apiKey, "https://api.deepseek.com", "deepseek-chat");
+  }
+
+  // 3. Gemini Handler (Default)
+  const ai = new GoogleGenAI({ apiKey: apiKey });
+  const parts: any[] = [];
+  
   if (file) {
     const filePart = await fileToGenerativePart(file);
     parts.push(filePart);
@@ -115,53 +174,24 @@ export const generateKnowledgeGraph = async (input: string, file?: File, userApi
   }
 
   try {
-    // Use Gemini 3 Flash with Search Grounding
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: { parts: parts },
       config: {
-        systemInstruction: systemInstruction,
+        systemInstruction: SYSTEM_PROMPT_CORE + "\n\n CONSTRAINTS: You MUST try to populate the 'url' field for every node using Google Search results.",
         responseMimeType: "application/json",
         tools: [{ googleSearch: {} }] 
       }
     });
 
-    let text = response.text || "{}";
-    
-    // Clean Markdown blocks if present (Robustness Fix)
-    if (text.includes("```json")) {
-        text = text.replace(/```json/g, "").replace(/```/g, "");
-    } else if (text.includes("```")) {
-        text = text.replace(/```/g, "");
-    }
-    
-    text = text.trim();
-
-    const data = JSON.parse(text) as GraphData;
-    
-    // --- CRITICAL SANITIZATION STEP ---
-    if (!data.nodes || !Array.isArray(data.nodes)) data.nodes = [];
-    if (!data.links || !Array.isArray(data.links)) data.links = [];
-
-    // 1. Ensure IDs are strings and Years are numbers
-    data.nodes.forEach(node => {
-        node.id = String(node.id);
-        node.year = parseInt(String(node.year)) || new Date().getFullYear();
-    });
-
-    // 2. Create a Set of valid Node IDs
-    const nodeIds = new Set(data.nodes.map(n => n.id));
-
-    // 3. Filter out links that point to non-existent nodes
-    data.links = data.links.filter(link => {
-        const sourceValid = nodeIds.has(String(link.source));
-        const targetValid = nodeIds.has(String(link.target));
-        return sourceValid && targetValid;
-    });
-    
-    return data;
-  } catch (e) {
-    console.error("Gemini API Error or Parse Error", e);
-    throw new Error("Analysis failed. Please check your API Key and try again.");
+    const text = response.text || "{}";
+    return parseAndSanitize(text);
+  } catch (e: any) {
+    console.error("Gemini API Error", e);
+    // Enhance error message for end users
+    let msg = e.message || "Unknown error";
+    if (msg.includes("403")) msg += " (Permission Denied - Check API Key or Model Access)";
+    if (msg.includes("429")) msg += " (Quota Exceeded)";
+    throw new Error(`Gemini Error: ${msg}`);
   }
 };

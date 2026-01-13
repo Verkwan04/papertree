@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch, Key, Settings, AlertCircle, Save } from 'lucide-react';
+import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch, Key, Settings, AlertCircle, Save, Bot } from 'lucide-react';
 import GraphView from './components/GraphView';
 import { GraphData, PaperNode } from './types';
 import { generateKnowledgeGraph } from './services/geminiService';
@@ -10,6 +10,8 @@ interface HistoryItem {
   timestamp: number;
   data: GraphData;
 }
+
+type AiProvider = 'gemini' | 'openai' | 'deepseek';
 
 const App: React.FC = () => {
   // Graph State
@@ -25,10 +27,21 @@ const App: React.FC = () => {
 
   // Settings / API Key State
   const [showSettings, setShowSettings] = useState(false);
-  const [apiKey, setApiKey] = useState('');
-  const [tempApiKey, setTempApiKey] = useState('');
+  
+  // Provider State
+  const [provider, setProvider] = useState<AiProvider>('gemini');
+  
+  // Separate keys for providers
+  const [geminiKey, setGeminiKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [deepseekKey, setDeepseekKey] = useState('');
+  
+  // Temp keys for modal inputs
+  const [tempGeminiKey, setTempGeminiKey] = useState('');
+  const [tempOpenaiKey, setTempOpenaiKey] = useState('');
+  const [tempDeepseekKey, setTempDeepseekKey] = useState('');
 
-  // Load history and API Key on mount
+  // Load history and API Keys on mount
   useEffect(() => {
     const saved = localStorage.getItem('paperTreeHistory');
     if (saved) {
@@ -39,11 +52,19 @@ const App: React.FC = () => {
         }
     }
     
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-        setApiKey(savedKey);
-        setTempApiKey(savedKey);
-    }
+    // Load keys
+    const gKey = localStorage.getItem('gemini_api_key');
+    if (gKey) { setGeminiKey(gKey); setTempGeminiKey(gKey); }
+    
+    const oKey = localStorage.getItem('openai_api_key');
+    if (oKey) { setOpenaiKey(oKey); setTempOpenaiKey(oKey); }
+    
+    const dKey = localStorage.getItem('deepseek_api_key');
+    if (dKey) { setDeepseekKey(dKey); setTempDeepseekKey(dKey); }
+
+    // Load last provider
+    const lastProvider = localStorage.getItem('selected_provider') as AiProvider;
+    if (lastProvider) setProvider(lastProvider);
   }, []);
 
   const saveToHistory = (query: string, data: GraphData) => {
@@ -71,17 +92,35 @@ const App: React.FC = () => {
       setShowHistory(false);
   };
 
-  const handleSaveApiKey = () => {
-      localStorage.setItem('gemini_api_key', tempApiKey);
-      setApiKey(tempApiKey);
+  const handleSaveSettings = () => {
+      localStorage.setItem('gemini_api_key', tempGeminiKey);
+      setGeminiKey(tempGeminiKey);
+
+      localStorage.setItem('openai_api_key', tempOpenaiKey);
+      setOpenaiKey(tempOpenaiKey);
+
+      localStorage.setItem('deepseek_api_key', tempDeepseekKey);
+      setDeepseekKey(tempDeepseekKey);
+
+      localStorage.setItem('selected_provider', provider);
+      
       setShowSettings(false);
+  };
+
+  const getCurrentKey = () => {
+      if (provider === 'gemini') return geminiKey;
+      if (provider === 'openai') return openaiKey;
+      if (provider === 'deepseek') return deepseekKey;
+      return '';
   };
 
   const handleIngest = async () => {
     if (!input && !file) return;
     
+    const activeKey = getCurrentKey();
+
     // Check for API Key first
-    if (!apiKey) {
+    if (!activeKey) {
         setShowSettings(true);
         return;
     }
@@ -89,16 +128,23 @@ const App: React.FC = () => {
     setLoading(true);
     setSelectedNode(null);
     try {
-      const data = await generateKnowledgeGraph(input, file || undefined, apiKey);
+      // Pass the provider and the specific key
+      const data = await generateKnowledgeGraph(input, file || undefined, activeKey, provider);
       setGraphData(data);
-      saveToHistory(file ? `PDF Analysis: ${file.name}` : input, data);
+      saveToHistory(file ? `[${provider}] PDF: ${file.name}` : `[${provider}] ${input}`, data);
     } catch (e: any) {
       console.error(e);
-      if (e.message === "MISSING_API_KEY") {
+      let msg = e.message || "Unknown error";
+      // Better error messages for Vercel/Deployment issues
+      if (msg.includes("401") || msg.includes("MISSING_API_KEY")) {
+          alert(`Authentication Failed for ${provider}. Please check your API Key.`);
           setShowSettings(true);
-          alert("Please enter a valid Google Gemini API Key to continue.");
+      } else if (msg.includes("429")) {
+          alert(`Rate limit exceeded for ${provider}. Please try again later.`);
+      } else if (msg.includes("503") || msg.includes("Overloaded")) {
+          alert(`${provider} is currently overloaded. Please try again.`);
       } else {
-          alert("Failed to analyze papers. Check your API Key quota or network connection.");
+          alert(`Analysis Failed: ${msg}`);
       }
     } finally {
       setLoading(false);
@@ -248,7 +294,7 @@ const App: React.FC = () => {
 
   const SettingsModal = () => (
      <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 ${showSettings ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all duration-300 scale-100">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all duration-300 scale-100 max-h-[90vh] overflow-y-auto">
            <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                  <Settings className="w-5 h-5 text-blue-600" /> API Settings
@@ -258,37 +304,109 @@ const App: React.FC = () => {
               </button>
            </div>
            
-           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-3 mb-6">
-              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-sm text-amber-800">
-                 <p className="font-semibold mb-1">API Key Required</p>
-                 To use the Gemini 2.0 and Search Grounding features, you need a Google GenAI API key. 
-                 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline ml-1 font-bold">Get one here</a>.
-              </div>
+           <div className="bg-slate-50 rounded-lg p-1 flex mb-6">
+              <button 
+                onClick={() => setProvider('gemini')}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'gemini' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Google Gemini
+              </button>
+              <button 
+                onClick={() => setProvider('openai')}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'openai' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                OpenAI
+              </button>
+              <button 
+                onClick={() => setProvider('deepseek')}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'deepseek' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                DeepSeek
+              </button>
            </div>
 
            <div className="space-y-4">
-              <div>
-                 <label className="block text-sm font-bold text-slate-700 mb-2">Gemini API Key</label>
-                 <div className="relative">
-                    <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                    <input 
-                      type="password"
-                      value={tempApiKey}
-                      onChange={(e) => setTempApiKey(e.target.value)}
-                      placeholder="AIzaSy..."
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-800 font-mono text-sm"
-                    />
-                 </div>
-                 <p className="text-xs text-slate-400 mt-2">Your key is stored locally in your browser and never sent to our servers.</p>
-              </div>
+              
+              {/* GEMINI SETTINGS */}
+              {provider === 'gemini' && (
+                <div>
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-3 mb-4">
+                        <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                        <div className="text-sm text-blue-800">
+                            <p className="font-semibold mb-1">Recommended</p>
+                            Gemini supports <b>PDF Uploads</b> and <b>Google Search</b> for real-time paper discovery.
+                        </div>
+                    </div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Gemini API Key</label>
+                    <div className="relative">
+                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                        <input 
+                        type="password"
+                        value={tempGeminiKey}
+                        onChange={(e) => setTempGeminiKey(e.target.value)}
+                        placeholder="AIzaSy..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-800 font-mono text-sm"
+                        />
+                    </div>
+                </div>
+              )}
 
-              <button 
-                 onClick={handleSaveApiKey}
-                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
-              >
-                 <Save className="w-4 h-4" /> Save & Continue
-              </button>
+              {/* OPENAI SETTINGS */}
+              {provider === 'openai' && (
+                <div>
+                     <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex gap-3 mb-4">
+                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-sm text-amber-800">
+                            <p className="font-semibold mb-1">Text Only</p>
+                            OpenAI mode currently supports topic research. PDF upload is disabled in this mode.
+                        </div>
+                    </div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">OpenAI API Key</label>
+                    <div className="relative">
+                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                        <input 
+                        type="password"
+                        value={tempOpenaiKey}
+                        onChange={(e) => setTempOpenaiKey(e.target.value)}
+                        placeholder="sk-proj-..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-slate-800 font-mono text-sm"
+                        />
+                    </div>
+                </div>
+              )}
+
+              {/* DEEPSEEK SETTINGS */}
+              {provider === 'deepseek' && (
+                <div>
+                     <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex gap-3 mb-4">
+                        <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                        <div className="text-sm text-indigo-800">
+                            <p className="font-semibold mb-1">Economic Choice</p>
+                             DeepSeek V3 is powerful and cost-effective. Supports text research only.
+                        </div>
+                    </div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">DeepSeek API Key</label>
+                    <div className="relative">
+                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                        <input 
+                        type="password"
+                        value={tempDeepseekKey}
+                        onChange={(e) => setTempDeepseekKey(e.target.value)}
+                        placeholder="sk-..."
+                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-slate-800 font-mono text-sm"
+                        />
+                    </div>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button 
+                    onClick={handleSaveSettings}
+                    className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-lg shadow-slate-900/10 transition-all flex items-center justify-center gap-2"
+                >
+                    <Save className="w-4 h-4" /> Save Configuration
+                </button>
+              </div>
            </div>
         </div>
      </div>
@@ -323,10 +441,15 @@ const App: React.FC = () => {
         <div className="flex items-center gap-3">
              <button
                onClick={() => setShowSettings(true)}
-               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${apiKey ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50 hover:bg-red-100 animate-pulse'}`}
+               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${getCurrentKey() ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50 hover:bg-red-100 animate-pulse'}`}
              >
-                <Key className="w-4 h-4" />
-                <span className="hidden sm:inline">{apiKey ? 'API Key Configured' : 'Set API Key'}</span>
+                <Settings className="w-4 h-4" />
+                <span className="hidden sm:inline">
+                    {provider === 'gemini' && "Gemini"}
+                    {provider === 'openai' && "OpenAI"}
+                    {provider === 'deepseek' && "DeepSeek"}
+                </span>
+                <span className={`w-2 h-2 rounded-full ${getCurrentKey() ? 'bg-green-500' : 'bg-red-500'}`}></span>
              </button>
         </div>
       </header>
@@ -344,38 +467,51 @@ const App: React.FC = () => {
                 {graphData.nodes.length === 0 && (
                    <div className="text-center pt-8 pb-6">
                        <h2 className="text-2xl font-bold text-slate-800 mb-3">Map the Evolution of Ideas</h2>
-                       <p className="text-slate-500 max-w-md mx-auto">Upload a PDF or enter a topic. PaperTree will use <span className="text-blue-600 font-medium">Google Search</span> to find related papers and build a chronological timeline.</p>
+                       <p className="text-slate-500 max-w-md mx-auto">
+                           Using <span className="font-bold text-slate-800 capitalize">{provider}</span>. 
+                           {provider === 'gemini' ? (
+                               <span> Features <span className="text-blue-600 font-medium">Google Search</span> & <span className="text-blue-600 font-medium">PDF Support</span>.</span>
+                           ) : (
+                               <span> Generates maps based on internal knowledge (Text only).</span>
+                           )}
+                       </p>
                    </div>
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-2 p-2">
                   <div className="flex-1 relative group">
-                    <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                    {provider === 'gemini' ? (
+                        <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                    ) : (
+                        <Bot className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    )}
                     <input 
                       type="text" 
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder="Enter a research topic (e.g., 'Attention is All You Need') or paste URLs..."
+                      placeholder={provider === 'gemini' ? "Enter a topic or paste URLs..." : "Enter a research topic..."}
                       className="w-full pl-11 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-blue-100 outline-none text-slate-800 placeholder:text-slate-400 transition-all font-medium"
                     />
                   </div>
                   
-                  <div className="relative shrink-0">
-                    <input 
-                      type="file" 
-                      id="pdf-upload"
-                      accept=".pdf,.txt,.md"
-                      className="hidden"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
-                    />
-                    <label 
-                      htmlFor="pdf-upload"
-                      className={`flex items-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
-                    >
-                      <Upload className="w-5 h-5" />
-                      <span className="hidden sm:inline">{file ? 'File Selected' : 'Upload PDF'}</span>
-                    </label>
-                  </div>
+                  {provider === 'gemini' && (
+                    <div className="relative shrink-0">
+                        <input 
+                        type="file" 
+                        id="pdf-upload"
+                        accept=".pdf,.txt,.md"
+                        className="hidden"
+                        onChange={(e) => setFile(e.target.files?.[0] || null)}
+                        />
+                        <label 
+                        htmlFor="pdf-upload"
+                        className={`flex items-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
+                        >
+                        <Upload className="w-5 h-5" />
+                        <span className="hidden sm:inline">{file ? 'File Selected' : 'Upload PDF'}</span>
+                        </label>
+                    </div>
+                  )}
 
                   <button 
                     onClick={handleIngest}
