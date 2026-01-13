@@ -1,18 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { GraphData } from "../types";
 
-// Helper to safely retrieve API Key to prevent ReferenceError in browser
-const getApiKey = () => {
-  try {
-    if (typeof process !== "undefined" && process.env) {
-      return process.env.API_KEY || "";
-    }
-  } catch (e) {
-    console.warn("Error accessing process.env", e);
-  }
-  return "";
-};
-
 // Helper to encode file to base64
 export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
   return new Promise((resolve, reject) => {
@@ -36,9 +24,30 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
  * Main Reasoning Engine for PaperTree.
  * Uses Gemini 3 Flash to analyze input + Google Search to find related papers/links.
  */
-export const generateKnowledgeGraph = async (input: string, file?: File): Promise<GraphData> => {
-  // Initialize client lazily to ensure environment is ready
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+export const generateKnowledgeGraph = async (input: string, file?: File, userApiKey?: string): Promise<GraphData> => {
+  // Priority: 1. Passed Argument (User Input) -> 2. LocalStorage -> 3. Environment Variable
+  let apiKey = userApiKey;
+  
+  if (!apiKey && typeof window !== 'undefined') {
+      apiKey = localStorage.getItem('gemini_api_key') || "";
+  }
+  
+  if (!apiKey) {
+     try {
+        if (typeof process !== "undefined" && process.env) {
+            apiKey = process.env.API_KEY || "";
+        }
+     } catch (e) {
+        // ignore process error
+     }
+  }
+
+  if (!apiKey) {
+      throw new Error("MISSING_API_KEY");
+  }
+
+  // Initialize client with the determined key
+  const ai = new GoogleGenAI({ apiKey: apiKey });
   
   const parts: any[] = [];
   
@@ -153,6 +162,6 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
     return data;
   } catch (e) {
     console.error("Gemini API Error or Parse Error", e);
-    throw new Error("Analysis failed. Please try again. (Tip: Try a simpler topic or smaller PDF)");
+    throw new Error("Analysis failed. Please check your API Key and try again.");
   }
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch } from 'lucide-react';
+import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch, Key, Settings, AlertCircle, Save } from 'lucide-react';
 import GraphView from './components/GraphView';
 import { GraphData, PaperNode } from './types';
 import { generateKnowledgeGraph } from './services/geminiService';
@@ -23,7 +23,12 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // Load history on mount
+  // Settings / API Key State
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [tempApiKey, setTempApiKey] = useState('');
+
+  // Load history and API Key on mount
   useEffect(() => {
     const saved = localStorage.getItem('paperTreeHistory');
     if (saved) {
@@ -32,6 +37,12 @@ const App: React.FC = () => {
         } catch (e) {
             console.error("Failed to load history");
         }
+    }
+    
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+        setApiKey(savedKey);
+        setTempApiKey(savedKey);
     }
   }, []);
 
@@ -60,17 +71,35 @@ const App: React.FC = () => {
       setShowHistory(false);
   };
 
+  const handleSaveApiKey = () => {
+      localStorage.setItem('gemini_api_key', tempApiKey);
+      setApiKey(tempApiKey);
+      setShowSettings(false);
+  };
+
   const handleIngest = async () => {
     if (!input && !file) return;
+    
+    // Check for API Key first
+    if (!apiKey) {
+        setShowSettings(true);
+        return;
+    }
+
     setLoading(true);
     setSelectedNode(null);
     try {
-      const data = await generateKnowledgeGraph(input, file || undefined);
+      const data = await generateKnowledgeGraph(input, file || undefined, apiKey);
       setGraphData(data);
       saveToHistory(file ? `PDF Analysis: ${file.name}` : input, data);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Failed to analyze papers. Please check the API Key or try a different input.");
+      if (e.message === "MISSING_API_KEY") {
+          setShowSettings(true);
+          alert("Please enter a valid Google Gemini API Key to continue.");
+      } else {
+          alert("Failed to analyze papers. Check your API Key quota or network connection.");
+      }
     } finally {
       setLoading(false);
     }
@@ -217,27 +246,88 @@ const App: React.FC = () => {
       </div>
   );
 
+  const SettingsModal = () => (
+     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm transition-opacity duration-300 ${showSettings ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all duration-300 scale-100">
+           <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                 <Settings className="w-5 h-5 text-blue-600" /> API Settings
+              </h3>
+              <button onClick={() => setShowSettings(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
+                 <X className="w-5 h-5" />
+              </button>
+           </div>
+           
+           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-3 mb-6">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-800">
+                 <p className="font-semibold mb-1">API Key Required</p>
+                 To use the Gemini 2.0 and Search Grounding features, you need a Google GenAI API key. 
+                 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="underline ml-1 font-bold">Get one here</a>.
+              </div>
+           </div>
+
+           <div className="space-y-4">
+              <div>
+                 <label className="block text-sm font-bold text-slate-700 mb-2">Gemini API Key</label>
+                 <div className="relative">
+                    <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                    <input 
+                      type="password"
+                      value={tempApiKey}
+                      onChange={(e) => setTempApiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-800 font-mono text-sm"
+                    />
+                 </div>
+                 <p className="text-xs text-slate-400 mt-2">Your key is stored locally in your browser and never sent to our servers.</p>
+              </div>
+
+              <button 
+                 onClick={handleSaveApiKey}
+                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center gap-2"
+              >
+                 <Save className="w-4 h-4" /> Save & Continue
+              </button>
+           </div>
+        </div>
+     </div>
+  );
+
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 overflow-hidden font-sans">
       {/* Header */}
       <header className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-8 justify-between shrink-0 z-30 shadow-sm relative">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4">
           <button 
             onClick={() => setShowHistory(!showHistory)} 
-            className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
+            className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors relative"
             title="Search History"
           >
               <History className="w-5 h-5" />
           </button>
+          
+          <div className="h-6 w-px bg-slate-200 mx-1"></div>
+
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
                 <Network className="w-5 h-5 text-white" />
             </div>
             <div>
-                <h1 className="font-bold text-xl tracking-tight text-slate-900">PaperTree</h1>
-                <p className="text-[10px] text-slate-500 font-medium tracking-wide uppercase">Academic Evolution Map</p>
+                <h1 className="font-bold text-xl tracking-tight text-slate-900 hidden md:block">PaperTree</h1>
+                <p className="text-[10px] text-slate-500 font-medium tracking-wide uppercase hidden md:block">Academic Evolution Map</p>
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+             <button
+               onClick={() => setShowSettings(true)}
+               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${apiKey ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50 hover:bg-red-100 animate-pulse'}`}
+             >
+                <Key className="w-4 h-4" />
+                <span className="hidden sm:inline">{apiKey ? 'API Key Configured' : 'Set API Key'}</span>
+             </button>
         </div>
       </header>
 
@@ -246,6 +336,7 @@ const App: React.FC = () => {
         <div className="flex h-full w-full relative">
           
           <HistoryDrawer />
+          <SettingsModal />
 
           {/* Input Overlay */}
           <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 z-10 w-full max-w-3xl px-4 ${graphData.nodes.length > 0 ? 'top-4' : 'top-[30%]'}`}>
