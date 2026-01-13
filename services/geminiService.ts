@@ -1,8 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import { GraphData } from "../types";
 
-// Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to safely retrieve API Key to prevent ReferenceError in browser
+const getApiKey = () => {
+  try {
+    if (typeof process !== "undefined" && process.env) {
+      return process.env.API_KEY || "";
+    }
+  } catch (e) {
+    console.warn("Error accessing process.env", e);
+  }
+  return "";
+};
 
 // Helper to encode file to base64
 export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
@@ -28,6 +37,9 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
  * Uses Gemini 3 Flash to analyze input + Google Search to find related papers/links.
  */
 export const generateKnowledgeGraph = async (input: string, file?: File): Promise<GraphData> => {
+  // Initialize client lazily to ensure environment is ready
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  
   const parts: any[] = [];
   
   // System Instruction to enforce JSON structure and Search usage
