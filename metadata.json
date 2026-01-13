@@ -1,0 +1,5 @@
+{
+  "name": "PaperTree",
+  "description": "An academic knowledge restructuring tool that uses Gemini to visualize research paper relationships, evolution, and conflicts.",
+  "requestFramePermissions": []
+}
