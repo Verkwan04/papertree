@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2 } from 'lucide-react';
+import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch } from 'lucide-react';
 import GraphView from './components/GraphView';
 import { GraphData, PaperNode } from './types';
 import { generateKnowledgeGraph } from './services/geminiService';
@@ -81,7 +81,7 @@ const App: React.FC = () => {
       <div className="flex justify-between items-start mb-6">
         <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
            <FileText className="w-5 h-5 text-slate-500" />
-           Paper Details
+           Analysis & Summary
         </h3>
         <button onClick={() => setSelectedNode(null)} className="p-1 hover:bg-slate-100 rounded transition-colors">
           <X className="w-5 h-5 text-slate-500" />
@@ -113,36 +113,49 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
-            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1 mb-2">
-               <Sparkles className="w-3 h-3" /> Core Novelty
+          {/* Featured Contribution Section */}
+          <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100 shadow-sm">
+            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1 mb-2">
+               <Lightbulb className="w-4 h-4" /> Core Innovation
             </span>
-            <p className="text-sm text-indigo-900 leading-relaxed font-medium">{selectedNode.novelty}</p>
+            <p className="text-sm text-slate-800 leading-relaxed font-semibold">{selectedNode.novelty}</p>
           </div>
 
+          {/* New Evolutionary Context Section */}
+          {selectedNode.evolutionSummary && (
+             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
+                  <GitBranch className="w-4 h-4" /> Context & Conclusion
+               </span>
+               <p className="text-sm text-slate-600 leading-relaxed italic border-l-2 border-slate-300 pl-3">
+                 "{selectedNode.evolutionSummary}"
+               </p>
+             </div>
+          )}
+
           <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Summary</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Abstract Summary</span>
             <p className="text-sm text-slate-600 leading-relaxed">{selectedNode.summary}</p>
           </div>
 
           {(selectedNode.dataset || selectedNode.benchmark || selectedNode.methodology) && (
-             <div className="space-y-3 pt-2">
+             <div className="space-y-3 pt-2 border-t border-slate-100">
                 {selectedNode.methodology && (
                    <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Methodology: </span>
-                      <span className="text-slate-700">{selectedNode.methodology}</span>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Methodology</span>
+                      <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.methodology}</span>
                    </div>
                 )}
                 {selectedNode.dataset && (
                    <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dataset: </span>
-                      <span className="text-slate-700">{selectedNode.dataset}</span>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Dataset</span>
+                      <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.dataset}</span>
                    </div>
                 )}
                 {selectedNode.benchmark && (
                    <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Benchmark: </span>
-                      <span className="text-slate-700">{selectedNode.benchmark}</span>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Benchmark</span>
+                      <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.benchmark}</span>
                    </div>
                 )}
              </div>
@@ -165,7 +178,7 @@ const App: React.FC = () => {
       ) : (
         <div className="text-center py-20 text-slate-400 flex flex-col items-center">
           <Network className="w-16 h-16 mb-4 opacity-10" />
-          <p className="text-sm font-medium">Select a node to view details.</p>
+          <p className="text-sm font-medium">Select a node to view the evolutionary analysis.</p>
         </div>
       )}
     </div>

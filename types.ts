@@ -12,6 +12,7 @@ export interface PaperNode {
   authors: string[];
   novelty: string; // "Novelty"
   summary: string;
+  evolutionSummary?: string; // NEW: Contextual summary regarding its place in history
   url?: string; // Link to the paper
   dataset?: string;
   benchmark?: string;

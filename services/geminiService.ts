@@ -45,7 +45,7 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
     CRITICAL RULE FOR LINKS:
     - The 'source' MUST be the OLDER paper.
     - The 'target' MUST be the NEWER paper.
-    - This ensures the arrows point forward in time (Evolution).
+    - The 'description' MUST be VERY SHORT (2-5 words max) for visualization labels (e.g., "Uses Transformer", "Improves Accuracy", "Contradicts Results").
 
     OUTPUT SCHEMA (JSON ONLY):
     {
@@ -56,8 +56,9 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
           "year": 2024, 
           "authors": ["Author A", "Author B"], 
           "url": "https://arxiv.org/abs/...", 
-          "novelty": "One sentence on the core innovation.", 
-          "summary": "A simple 2-sentence summary for a general audience.", 
+          "novelty": "One sentence on the core innovation/contribution.", 
+          "summary": "A concise summary of the abstract.", 
+          "evolutionSummary": "A 3-4 sentence narrative explaining this paper's role in the timeline. What problem from the past did it solve? What conclusion did it reach that affected future papers?",
           "dataset": "Dataset used (optional)", 
           "benchmark": "Benchmark used (optional)", 
           "methodology": "Methodology used (optional)" 
@@ -68,7 +69,7 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
           "source": "id_of_older_paper", 
           "target": "id_of_newer_paper", 
           "type": "Inheritance" | "Conflict" | "Inspiration" | "Citation", 
-          "description": "Short explanation of the relationship" 
+          "description": "Very short label (2-5 words) describing the evolution" 
         } 
       ]
     }
@@ -106,7 +107,7 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
 
     let text = response.text || "{}";
     
-    // Clean Markdown blocks if present
+    // Clean Markdown blocks if present (Robustness Fix)
     if (text.includes("```json")) {
         text = text.replace(/```json/g, "").replace(/```/g, "");
     } else if (text.includes("```")) {
@@ -124,13 +125,13 @@ export const generateKnowledgeGraph = async (input: string, file?: File): Promis
     // 1. Ensure IDs are strings and Years are numbers
     data.nodes.forEach(node => {
         node.id = String(node.id);
-        node.year = parseInt(String(node.year)) || new Date().getFullYear(); // Fallback to current year if NaN
+        node.year = parseInt(String(node.year)) || new Date().getFullYear();
     });
 
     // 2. Create a Set of valid Node IDs
     const nodeIds = new Set(data.nodes.map(n => n.id));
 
-    // 3. Filter out links that point to non-existent nodes (Prevents D3 crash)
+    // 3. Filter out links that point to non-existent nodes
     data.links = data.links.filter(link => {
         const sourceValid = nodeIds.has(String(link.source));
         const targetValid = nodeIds.has(String(link.target));

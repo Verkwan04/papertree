@@ -12,7 +12,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
-  // Use ResizeObserver for more robust dimension tracking
+  // Use ResizeObserver for robust dimension tracking
   useEffect(() => {
     if (!wrapperRef.current) return;
     
@@ -30,12 +30,10 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: Check dimensions and data availability
+    // CRITICAL: Check dimensions and data
     if (!data.nodes.length || !svgRef.current || dimensions.width === 0 || dimensions.height === 0) return;
 
     // CRITICAL FIX: Deep copy data to prevent D3 from mutating React props/state
-    // This solves the "white screen" or crash issue in Strict Mode where D3 tries to
-    // process already-linked objects as raw data in the second render pass.
     const nodes = data.nodes.map(d => ({ ...d }));
     const links = data.links.map(d => ({ ...d }));
 
@@ -86,15 +84,14 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
 
     // 3. Forces
     const simulation = d3.forceSimulation<PaperNode>(nodes)
-      .force("link", d3.forceLink<PaperNode, PaperLink>(links).id(d => d.id).distance(100))
-      .force("charge", d3.forceManyBody().strength(-300))
-      .force("collide", d3.forceCollide().radius(35))
+      .force("link", d3.forceLink<PaperNode, PaperLink>(links).id(d => d.id).distance(140)) // Increased distance for text labels
+      .force("charge", d3.forceManyBody().strength(-350))
+      .force("collide", d3.forceCollide().radius(40))
       .force("x", d3.forceX(d => {
          const yearX = timeScale(d.year);
-         // Safety check for NaN
          return isNaN(yearX) ? width / 2 : yearX;
       }).strength(1.2)) 
-      .force("y", d3.forceY(height / 2).strength(0.08)); 
+      .force("y", d3.forceY(height / 2).strength(0.1)); 
 
     // Arrow marker definitions
     const defs = svg.append("defs");
@@ -119,7 +116,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
         .attr("fill", color);
     });
 
-    // Links
+    // Links (Lines)
     const link = g.append("g")
       .selectAll("path")
       .data(links)
@@ -134,6 +131,22 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
       })
       .attr("stroke-dasharray", d => d.type === RelationType.INSPIRATION ? "5,5" : "0")
       .attr("marker-end", d => `url(#arrow-${d.type})`);
+
+    // Link Labels (Text describing the relationship)
+    const linkLabel = g.append("g")
+      .attr("class", "link-labels")
+      .selectAll("text")
+      .data(links)
+      .enter().append("text")
+      .text(d => d.description)
+      .attr("text-anchor", "middle")
+      .attr("font-size", "9px")
+      .attr("fill", "#475569")
+      .style("paint-order", "stroke")
+      .style("stroke", "#f8fafc")
+      .style("stroke-width", "3px")
+      .style("stroke-linecap", "butt")
+      .style("stroke-linejoin", "round");
 
     // Nodes
     const node = g.append("g")
@@ -189,7 +202,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
 
     simulation.on("tick", () => {
         link.attr("d", d => {
-            // Check if source/target are objects (they should be after simulation starts)
             const source = d.source as PaperNode;
             const target = d.target as PaperNode;
             
@@ -201,6 +213,11 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
             
             return `M${source.x},${source.y}A${dr},${dr} 0 0,1 ${target.x},${target.y}`;
         });
+
+        // Update link label position to be the midpoint of the link
+        linkLabel
+            .attr("x", d => ((d.source as PaperNode).x! + (d.target as PaperNode).x!) / 2)
+            .attr("y", d => ((d.source as PaperNode).y! + (d.target as PaperNode).y!) / 2 - 4); // Slightly offset up
 
         node.attr("transform", d => `translate(${d.x},${d.y})`);
     });
@@ -222,7 +239,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect }) => {
       d.fy = null;
     }
     
-    // Cleanup simulation on unmount
     return () => simulation.stop();
 
   }, [data, dimensions, onNodeSelect]);
