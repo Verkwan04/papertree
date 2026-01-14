@@ -1,8 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Part } from "@google/genai";
 import { GraphData } from "../types";
 
 // Helper to encode file to base64
-export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { data: string; mimeType: string } }> => {
+export const fileToGenerativePart = async (file: File): Promise<Part> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -176,19 +176,19 @@ export const generateKnowledgeGraph = async (
     language: 'en' | 'zh' = 'zh'
 ): Promise<GraphData> => {
 
-  if (!apiKey) throw new Error("MISSING_API_KEY");
+  if (!apiKey && provider !== 'gemini') throw new Error("MISSING_API_KEY");
 
   // OpenAI / DeepSeek
   if (provider === 'openai') {
-      return generateWithOpenAICompatible(input, apiKey, "https://api.openai.com/v1", "gpt-4o", mode, language);
+      return generateWithOpenAICompatible(input, apiKey || "", "https://api.openai.com/v1", "gpt-4o", mode, language);
   }
   if (provider === 'deepseek') {
-      return generateWithOpenAICompatible(input, apiKey, "https://api.deepseek.com", "deepseek-chat", mode, language);
+      return generateWithOpenAICompatible(input, apiKey || "", "https://api.deepseek.com", "deepseek-chat", mode, language);
   }
 
   // Gemini
-  const ai = new GoogleGenAI({ apiKey: apiKey });
-  const parts: any[] = [];
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const parts: Part[] = [];
   
   if (file) {
     const filePart = await fileToGenerativePart(file);

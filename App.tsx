@@ -88,12 +88,10 @@ const App: React.FC = () => {
   // Provider State
   const [provider, setProvider] = useState<AiProvider>('gemini');
   
-  // Keys
-  const [geminiKey, setGeminiKey] = useState('');
+  // Keys for other providers
   const [openaiKey, setOpenaiKey] = useState('');
   const [deepseekKey, setDeepseekKey] = useState('');
   
-  const [tempGeminiKey, setTempGeminiKey] = useState('');
   const [tempOpenaiKey, setTempOpenaiKey] = useState('');
   const [tempDeepseekKey, setTempDeepseekKey] = useState('');
 
@@ -112,9 +110,6 @@ const App: React.FC = () => {
             console.error("Failed to load history");
         }
     }
-    
-    const gKey = localStorage.getItem('gemini_api_key');
-    if (gKey) { setGeminiKey(gKey); setTempGeminiKey(gKey); }
     
     const oKey = localStorage.getItem('openai_api_key');
     if (oKey) { setOpenaiKey(oKey); setTempOpenaiKey(oKey); }
@@ -160,9 +155,6 @@ const App: React.FC = () => {
   };
 
   const handleSaveSettings = () => {
-      localStorage.setItem('gemini_api_key', tempGeminiKey);
-      setGeminiKey(tempGeminiKey);
-
       localStorage.setItem('openai_api_key', tempOpenaiKey);
       setOpenaiKey(tempOpenaiKey);
 
@@ -181,7 +173,7 @@ const App: React.FC = () => {
   };
 
   const getCurrentKey = () => {
-      if (provider === 'gemini') return geminiKey;
+      if (provider === 'gemini') return "env_provided";
       if (provider === 'openai') return openaiKey;
       if (provider === 'deepseek') return deepseekKey;
       return '';
@@ -215,7 +207,9 @@ const App: React.FC = () => {
     setLoading(true);
     setSelectedNode(null);
     try {
-      const data = await generateKnowledgeGraph(input, file || undefined, activeKey, provider, mode, language);
+      // For Gemini, we pass undefined as apiKey to prompt usage of process.env in service
+      const apiKeyToUse = provider === 'gemini' ? undefined : activeKey;
+      const data = await generateKnowledgeGraph(input, file || undefined, apiKeyToUse, provider, mode, language);
       setGraphData(data);
       
       const queryLabel = file ? `[${provider.toUpperCase()}] PDF: ${file.name}` : `[${provider.toUpperCase()}] ${input}`;
@@ -289,7 +283,7 @@ const App: React.FC = () => {
                <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1 mb-2">
                   <Scale className="w-4 h-4" /> {t.difference}
                </span>
-               <p className="text-sm text-slate-800 leading-relaxed font-medium">
+               <p className="text-sm text-slate-800 leading-7 font-medium text-justify tracking-wide">
                  {selectedNode.comparison}
                </p>
              </div>
@@ -299,7 +293,7 @@ const App: React.FC = () => {
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1 mb-2">
                <Lightbulb className="w-3 h-3" /> {t.coreInnovation}
             </span>
-            <p className="text-sm text-indigo-900 leading-relaxed font-medium">{selectedNode.novelty}</p>
+            <p className="text-sm text-indigo-900 leading-7 font-medium text-justify tracking-wide">{selectedNode.novelty}</p>
           </div>
 
           {selectedNode.evolutionSummary && (
@@ -307,7 +301,7 @@ const App: React.FC = () => {
                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
                   <GitBranch className="w-4 h-4" /> {t.placeInEvolution}
                </span>
-               <p className="text-sm text-slate-600 leading-relaxed italic border-l-2 border-slate-300 pl-3">
+               <p className="text-sm text-slate-700 leading-7 italic border-l-2 border-slate-300 pl-3 text-justify">
                  "{selectedNode.evolutionSummary}"
                </p>
              </div>
@@ -381,14 +375,9 @@ const App: React.FC = () => {
                             Supports PDF Analysis & Google Search.
                         </div>
                     </div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Gemini API Key</label>
-                    <input 
-                      type="password"
-                      value={tempGeminiKey}
-                      onChange={(e) => setTempGeminiKey(e.target.value)}
-                      placeholder="AIzaSy..."
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-mono text-sm"
-                    />
+                    <div className="p-3 bg-slate-100 rounded text-slate-500 text-sm italic border border-slate-200">
+                        API Key is configured via environment variables.
+                    </div>
                 </div>
               )}
               {provider === 'openai' && (
