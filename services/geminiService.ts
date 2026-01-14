@@ -24,17 +24,11 @@ const SYSTEM_PROMPT_CORE = `
     You are "PaperTree", an advanced academic research assistant specialized in mapping the EVOLUTION of ideas.
     
     YOUR GOAL:
-    1. Analyze the user's input (a research topic).
-    2. Find 3-5 HIGHLY RELEVANT related papers based on your knowledge.
-    3. Look for specific relationships to build a CHRONOLOGICAL EVOLUTION MAP:
-       - Ancestors (Papers that influenced this work).
-       - Successors (Papers that cite or improve this work).
-       - Conflicts (Papers with contradictory results).
-    
-    CRITICAL RULE FOR LINKS:
-    - The 'source' MUST be the OLDER paper.
-    - The 'target' MUST be the NEWER paper.
-    - The 'description' MUST be VERY SHORT (2-5 words max) for visualization labels.
+    1. Analyze the user's input (topic or paper).
+    2. Identify 5-10 HIGHLY RELEVANT papers.
+       - FILTERING: Ignore trivial "background" citations. Only include papers that provided CORE INSPIRATION, MAJOR CONFLICTS, or SIGNIFICANT ALGORITHMIC IMPROVEMENTS.
+       - SEMANTIC ASSOCIATION: If two papers share a methodology but don't cite each other, link them as "Inspiration".
+    3. Categorize each paper into a cluster (e.g., "Architecture", "Optimization", "Theory", "Application").
 
     OUTPUT SCHEMA (JSON ONLY):
     {
@@ -45,9 +39,11 @@ const SYSTEM_PROMPT_CORE = `
           "year": 2024, 
           "authors": ["Author A", "Author B"], 
           "url": "https://arxiv.org/abs/...", 
-          "novelty": "One sentence on the core innovation/contribution.", 
-          "summary": "A concise summary of the abstract.", 
-          "evolutionSummary": "A 3-4 sentence narrative explaining this paper's role in the timeline. What problem from the past did it solve? What conclusion did it reach that affected future papers?",
+          "category": "Cluster Label (e.g. Transformer Variant, RL Algorithm)",
+          "novelty": "One sentence on the core innovation.", 
+          "summary": "Concise abstract summary.", 
+          "evolutionSummary": "Place in history: What problem did it solve? What did it lead to?",
+          "comparison": "How does this differ from the previous major paper? (e.g., 'Replaces RNNs with Self-Attention')",
           "dataset": "Dataset used (optional)", 
           "benchmark": "Benchmark used (optional)", 
           "methodology": "Methodology used (optional)" 
@@ -58,24 +54,36 @@ const SYSTEM_PROMPT_CORE = `
           "source": "id_of_older_paper", 
           "target": "id_of_newer_paper", 
           "type": "Inheritance" | "Conflict" | "Inspiration" | "Citation", 
-          "description": "Very short label (2-5 words) describing the evolution" 
+          "description": "Very short label (2-5 words)" 
         } 
       ]
     }
+
+    STRICT JSON RULES:
+    - All property names MUST be double-quoted. (e.g., "id": "...", NOT id: "...")
+    - No trailing commas allowed.
+    - Do not output markdown code blocks if possible, just raw JSON.
 `;
 
-/**
- * Handle OpenAI / DeepSeek Requests via Standard Fetch
- */
 const generateWithOpenAICompatible = async (
     input: string, 
     apiKey: string, 
     baseUrl: string, 
-    model: string
+    model: string,
+    mode: 'fast' | 'deep',
+    language: 'en' | 'zh'
 ): Promise<GraphData> => {
     
+    const modePrompt = mode === 'deep' 
+        ? "Perform a DEEP analysis. detailed comparison, strictly accurate citations." 
+        : "Perform a FAST analysis. Focus on high-level connections.";
+    
+    const langPrompt = language === 'zh'
+        ? "OUTPUT IN SIMPLIFIED CHINESE. All fields (summary, novelty, description, etc) must be in Chinese. Title can remain original if English."
+        : "OUTPUT IN ENGLISH.";
+
     const messages = [
-        { role: "system", content: SYSTEM_PROMPT_CORE + "\n\n IMPORTANT: Return ONLY valid JSON. No Markdown formatting." },
+        { role: "system", content: SYSTEM_PROMPT_CORE + "\n\n" + modePrompt + "\n" + langPrompt + "\n\n IMPORTANT: Return ONLY valid JSON. No comments, no markdown." },
         { role: "user", content: `Research Topic: ${input}. Build an evolutionary knowledge graph.` }
     ];
 
@@ -88,7 +96,7 @@ const generateWithOpenAICompatible = async (
         body: JSON.stringify({
             model: model,
             messages: messages,
-            temperature: 0.1, // Low temp for JSON stability
+            temperature: 0.1, 
             max_tokens: 4000
         })
     });
@@ -105,80 +113,112 @@ const generateWithOpenAICompatible = async (
 };
 
 const parseAndSanitize = (text: string): GraphData => {
-     let cleanText = text;
-     // Clean Markdown blocks
-    if (cleanText.includes("```json")) {
-        cleanText = cleanText.replace(/```json/g, "").replace(/```/g, "");
-    } else if (cleanText.includes("```")) {
-        cleanText = cleanText.replace(/```/g, "");
-    }
-    cleanText = cleanText.trim();
-
-    const data = JSON.parse(cleanText) as GraphData;
+    let cleanText = text.trim();
     
-    if (!data.nodes || !Array.isArray(data.nodes)) data.nodes = [];
-    if (!data.links || !Array.isArray(data.links)) data.links = [];
+    // 1. Remove Markdown code blocks
+    cleanText = cleanText.replace(/```json/g, "").replace(/```/g, "");
 
-    data.nodes.forEach(node => {
-        node.id = String(node.id);
-        node.year = parseInt(String(node.year)) || new Date().getFullYear();
-    });
+    // 2. Extract content between first { and last } to remove pre/post-amble
+    const firstOpen = cleanText.indexOf('{');
+    const lastClose = cleanText.lastIndexOf('}');
+    if (firstOpen !== -1 && lastClose !== -1) {
+        cleanText = cleanText.substring(firstOpen, lastClose + 1);
+    }
 
-    const nodeIds = new Set(data.nodes.map(n => n.id));
-    data.links = data.links.filter(link => {
-        const sourceValid = nodeIds.has(String(link.source));
-        const targetValid = nodeIds.has(String(link.target));
-        return sourceValid && targetValid;
-    });
+    // 3. Robust Cleanup (Handling common LLM JSON errors)
+    // Remove trailing commas before } or ]
+    cleanText = cleanText.replace(/,(\s*[}\]])/g, '$1');
 
-    return data;
+    // Fix unquoted property names: { key: -> { "key": 
+    // This regex looks for { or , followed by whitespace, then an alphanumeric key, then :
+    // It captures the delimiter ($1), the key ($2) and replaces with "$2":
+    cleanText = cleanText.replace(/([{,]\s*)([a-zA-Z0-9_]+?)\s*:/g, '$1"$2":');
+    
+    // Fix single-quoted property names: { 'key': -> { "key":
+    cleanText = cleanText.replace(/([{,]\s*)'([a-zA-Z0-9_]+?)'\s*:/g, '$1"$2":');
+
+    try {
+        const data = JSON.parse(cleanText) as GraphData;
+        
+        if (!data.nodes || !Array.isArray(data.nodes)) data.nodes = [];
+        if (!data.links || !Array.isArray(data.links)) data.links = [];
+
+        data.nodes.forEach(node => {
+            node.id = String(node.id);
+            const y = parseInt(String(node.year));
+            node.year = isNaN(y) ? new Date().getFullYear() : y;
+            if (!Array.isArray(node.authors)) {
+                node.authors = typeof node.authors === 'string' ? [node.authors] : [];
+            }
+        });
+
+        const nodeIds = new Set(data.nodes.map(n => n.id));
+        data.links = data.links.filter(link => {
+            const sourceValid = nodeIds.has(String(link.source));
+            const targetValid = nodeIds.has(String(link.target));
+            return sourceValid && targetValid;
+        });
+
+        return data;
+    } catch (e) {
+        console.error("JSON Parse Failed", e);
+        console.log("Failed Text (Cleaned):", cleanText);
+        throw new Error("Failed to parse analysis results. The model returned invalid JSON.");
+    }
 };
 
-/**
- * Main Reasoning Engine
- */
 export const generateKnowledgeGraph = async (
     input: string, 
     file?: File, 
     apiKey?: string, 
-    provider: 'gemini' | 'openai' | 'deepseek' = 'gemini'
+    provider: 'gemini' | 'openai' | 'deepseek' = 'gemini',
+    mode: 'fast' | 'deep' = 'fast',
+    language: 'en' | 'zh' = 'zh'
 ): Promise<GraphData> => {
 
   if (!apiKey) throw new Error("MISSING_API_KEY");
 
-  // 1. OpenAI Handler
+  // OpenAI / DeepSeek
   if (provider === 'openai') {
-      return generateWithOpenAICompatible(input, apiKey, "https://api.openai.com/v1", "gpt-4o");
+      return generateWithOpenAICompatible(input, apiKey, "https://api.openai.com/v1", "gpt-4o", mode, language);
   }
-
-  // 2. DeepSeek Handler
   if (provider === 'deepseek') {
-      return generateWithOpenAICompatible(input, apiKey, "https://api.deepseek.com", "deepseek-chat");
+      return generateWithOpenAICompatible(input, apiKey, "https://api.deepseek.com", "deepseek-chat", mode, language);
   }
 
-  // 3. Gemini Handler (Default)
+  // Gemini
   const ai = new GoogleGenAI({ apiKey: apiKey });
   const parts: any[] = [];
   
   if (file) {
     const filePart = await fileToGenerativePart(file);
     parts.push(filePart);
-    parts.push({ text: "Analyze this paper. Find its official URL via Google Search. Then find related papers (predecessors and successors) to show how this research evolved." });
+    parts.push({ text: mode === 'deep' 
+        ? "Analyze this paper in DEPTH. Find predecessors, successors, and conflicts. Focus on semantic relationships even without direct citations."
+        : "Analyze this paper. Quickly identify key related papers and the general evolutionary tree." 
+    });
   }
   
   if (input) {
     parts.push({ text: input });
     if (!file) {
-       parts.push({ text: "Use Google Search to find papers related to this topic/URL and build an evolutionary timeline map." });
+       parts.push({ text: "Use Google Search to find high-quality academic papers and build a robust knowledge graph." });
     }
   }
 
+  // Model Selection
+  const modelName = mode === 'deep' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+  
+  const langInstruction = language === 'zh' 
+       ? "OUTPUT MUST BE IN CHINESE (Simplified Chinese). 所有说明、摘要、标题都需要是中文（除了论文原名）。"
+       : "OUTPUT MUST BE IN ENGLISH.";
+
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: modelName,
       contents: { parts: parts },
       config: {
-        systemInstruction: SYSTEM_PROMPT_CORE + "\n\n CONSTRAINTS: You MUST try to populate the 'url' field for every node using Google Search results.",
+        systemInstruction: SYSTEM_PROMPT_CORE + "\n\n CONSTRAINTS: Return ONLY valid JSON. Populate 'url' using Google Search. \n" + langInstruction,
         responseMimeType: "application/json",
         tools: [{ googleSearch: {} }] 
       }
@@ -188,9 +228,8 @@ export const generateKnowledgeGraph = async (
     return parseAndSanitize(text);
   } catch (e: any) {
     console.error("Gemini API Error", e);
-    // Enhance error message for end users
     let msg = e.message || "Unknown error";
-    if (msg.includes("403")) msg += " (Permission Denied - Check API Key or Model Access)";
+    if (msg.includes("403")) msg += " (Permission Denied)";
     if (msg.includes("429")) msg += " (Quota Exceeded)";
     throw new Error(`Gemini Error: ${msg}`);
   }

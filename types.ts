@@ -13,6 +13,8 @@ export interface PaperNode {
   novelty: string; // "Novelty"
   summary: string;
   evolutionSummary?: string; // NEW: Contextual summary regarding its place in history
+  comparison?: string; // NEW: Difference from context/predecessors
+  category?: string; // NEW: For clustering (e.g., "Algorithm", "Theory", "Application")
   url?: string; // Link to the paper
   dataset?: string;
   benchmark?: string;

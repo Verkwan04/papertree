@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch, Key, Settings, AlertCircle, Save, Bot } from 'lucide-react';
+import { Network, Upload, Loader2, Sparkles, X, Search, FileText, ExternalLink, History, Clock, Trash2, Lightbulb, GitBranch, Key, Settings, AlertCircle, Save, Bot, Zap, BrainCircuit, Scale, ChevronDown, ChevronUp, Languages } from 'lucide-react';
 import GraphView from './components/GraphView';
 import { GraphData, PaperNode } from './types';
 import { generateKnowledgeGraph } from './services/geminiService';
@@ -9,9 +9,63 @@ interface HistoryItem {
   query: string;
   timestamp: number;
   data: GraphData;
+  mode: 'fast' | 'deep';
+  language: 'en' | 'zh';
 }
 
 type AiProvider = 'gemini' | 'openai' | 'deepseek';
+type AnalysisMode = 'fast' | 'deep';
+
+const translations = {
+  en: {
+    appTitle: "PaperTree",
+    history: "History",
+    settings: "Settings",
+    newAnalysis: "New Analysis",
+    fastScan: "FAST SCAN",
+    deepSearch: "DEEP SEARCH",
+    searchPlaceholder: "Enter topic (e.g., 'Transformer Architecture') or paste URLs...",
+    mapButton: "Map",
+    deepSearchButton: "Deep Search",
+    analyzing: "Analyzing...",
+    legend: "Legend",
+    export: "Export Graph",
+    readPaper: "Read Full Paper",
+    coreInnovation: "Core Innovation",
+    placeInEvolution: "Place in Evolution",
+    difference: "Difference vs Context",
+    year: "Year",
+    authors: "Authors",
+    methodology: "Methodology",
+    selectToView: "Select a node to view details.",
+    evolutionMap: "Research Evolution Map",
+    subtitle: "Visualize citation trees, conflicts, and inspirations."
+  },
+  zh: {
+    appTitle: "研谱 (PaperTree)",
+    history: "历史记录",
+    settings: "设置",
+    newAnalysis: "新的一轮",
+    fastScan: "快速扫描",
+    deepSearch: "深度搜索",
+    searchPlaceholder: "输入课题 (如 'Transformer 架构') 或粘贴链接...",
+    mapButton: "生成图谱",
+    deepSearchButton: "深度研读",
+    analyzing: "分析中...",
+    legend: "图例",
+    export: "导出图片",
+    readPaper: "阅读全文",
+    coreInnovation: "核心创新",
+    placeInEvolution: "演进定位",
+    difference: "差异与对比",
+    year: "年份",
+    authors: "作者",
+    methodology: "方法论",
+    selectToView: "点击节点查看详细解读",
+    evolutionMap: "学术演进图谱",
+    subtitle: "可视化引用脉络、学术冲突与灵感来源"
+  }
+};
 
 const App: React.FC = () => {
   // Graph State
@@ -20,6 +74,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
   const [selectedNode, setSelectedNode] = useState<PaperNode | null>(null);
+  const [mode, setMode] = useState<AnalysisMode>('fast');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(true);
+  const [language, setLanguage] = useState<'en' | 'zh'>('zh');
   
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -31,17 +88,21 @@ const App: React.FC = () => {
   // Provider State
   const [provider, setProvider] = useState<AiProvider>('gemini');
   
-  // Separate keys for providers
+  // Keys
   const [geminiKey, setGeminiKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [deepseekKey, setDeepseekKey] = useState('');
   
-  // Temp keys for modal inputs
   const [tempGeminiKey, setTempGeminiKey] = useState('');
   const [tempOpenaiKey, setTempOpenaiKey] = useState('');
   const [tempDeepseekKey, setTempDeepseekKey] = useState('');
 
-  // Load history and API Keys on mount
+  const t = translations[language];
+
+  // Cache System
+  const getCacheKey = (p: AiProvider, m: AnalysisMode, i: string, f: string | undefined, l: string) => `cache_${p}_${m}_${l}_${i}_${f || 'nofile'}`;
+
+  // Load history and API Keys
   useEffect(() => {
     const saved = localStorage.getItem('paperTreeHistory');
     if (saved) {
@@ -52,7 +113,6 @@ const App: React.FC = () => {
         }
     }
     
-    // Load keys
     const gKey = localStorage.getItem('gemini_api_key');
     if (gKey) { setGeminiKey(gKey); setTempGeminiKey(gKey); }
     
@@ -62,19 +122,23 @@ const App: React.FC = () => {
     const dKey = localStorage.getItem('deepseek_api_key');
     if (dKey) { setDeepseekKey(dKey); setTempDeepseekKey(dKey); }
 
-    // Load last provider
     const lastProvider = localStorage.getItem('selected_provider') as AiProvider;
     if (lastProvider) setProvider(lastProvider);
+    
+    const savedLang = localStorage.getItem('language') as 'en' | 'zh';
+    if (savedLang) setLanguage(savedLang);
   }, []);
 
-  const saveToHistory = (query: string, data: GraphData) => {
+  const saveToHistory = (query: string, data: GraphData, usedMode: AnalysisMode, lang: 'en'|'zh') => {
     const newItem: HistoryItem = {
         id: Date.now().toString(),
         query: query,
         timestamp: Date.now(),
-        data: data
+        data: data,
+        mode: usedMode,
+        language: lang
     };
-    const updated = [newItem, ...history].slice(0, 20); // Keep last 20
+    const updated = [newItem, ...history].slice(0, 20); 
     setHistory(updated);
     localStorage.setItem('paperTreeHistory', JSON.stringify(updated));
   };
@@ -89,7 +153,10 @@ const App: React.FC = () => {
   const loadHistoryItem = (item: HistoryItem) => {
       setGraphData(item.data);
       setSelectedNode(null);
+      setMode(item.mode);
+      setLanguage(item.language || 'zh');
       setShowHistory(false);
+      setIsSearchExpanded(false); // Auto collapse on load
   };
 
   const handleSaveSettings = () => {
@@ -107,6 +174,12 @@ const App: React.FC = () => {
       setShowSettings(false);
   };
 
+  const toggleLanguage = () => {
+      const newLang = language === 'en' ? 'zh' : 'en';
+      setLanguage(newLang);
+      localStorage.setItem('language', newLang);
+  };
+
   const getCurrentKey = () => {
       if (provider === 'gemini') return geminiKey;
       if (provider === 'openai') return openaiKey;
@@ -118,31 +191,48 @@ const App: React.FC = () => {
     if (!input && !file) return;
     
     const activeKey = getCurrentKey();
-
-    // Check for API Key first
     if (!activeKey) {
         setShowSettings(true);
         return;
     }
 
+    // Check Cache
+    const cacheKey = getCacheKey(provider, mode, input, file?.name, language);
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+        try {
+            const parsed = JSON.parse(cachedData);
+            setGraphData(parsed);
+            setSelectedNode(null);
+            setIsSearchExpanded(false); // Auto collapse
+            console.log("Loaded from cache:", cacheKey);
+            return;
+        } catch(e) {
+            localStorage.removeItem(cacheKey);
+        }
+    }
+
     setLoading(true);
     setSelectedNode(null);
     try {
-      // Pass the provider and the specific key
-      const data = await generateKnowledgeGraph(input, file || undefined, activeKey, provider);
+      const data = await generateKnowledgeGraph(input, file || undefined, activeKey, provider, mode, language);
       setGraphData(data);
-      saveToHistory(file ? `[${provider}] PDF: ${file.name}` : `[${provider}] ${input}`, data);
+      
+      const queryLabel = file ? `[${provider.toUpperCase()}] PDF: ${file.name}` : `[${provider.toUpperCase()}] ${input}`;
+      saveToHistory(queryLabel, data, mode, language);
+
+      // Save to Cache
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+      setIsSearchExpanded(false); // Auto collapse
+
     } catch (e: any) {
       console.error(e);
       let msg = e.message || "Unknown error";
-      // Better error messages for Vercel/Deployment issues
       if (msg.includes("401") || msg.includes("MISSING_API_KEY")) {
           alert(`Authentication Failed for ${provider}. Please check your API Key.`);
           setShowSettings(true);
       } else if (msg.includes("429")) {
           alert(`Rate limit exceeded for ${provider}. Please try again later.`);
-      } else if (msg.includes("503") || msg.includes("Overloaded")) {
-          alert(`${provider} is currently overloaded. Please try again.`);
       } else {
           alert(`Analysis Failed: ${msg}`);
       }
@@ -156,7 +246,7 @@ const App: React.FC = () => {
       <div className="flex justify-between items-start mb-6">
         <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
            <FileText className="w-5 h-5 text-slate-500" />
-           Analysis & Summary
+           {language === 'en' ? 'Details' : '详细信息'}
         </h3>
         <button onClick={() => setSelectedNode(null)} className="p-1 hover:bg-slate-100 rounded transition-colors">
           <X className="w-5 h-5 text-slate-500" />
@@ -166,12 +256,16 @@ const App: React.FC = () => {
       {selectedNode ? (
         <div className="space-y-6 flex-1">
           <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1 block">Title</span>
+            {selectedNode.category && (
+                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-100 text-blue-700 mb-2">
+                    {selectedNode.category}
+                </span>
+            )}
             <a 
               href={selectedNode.url || "#"} 
               target="_blank" 
               rel="noopener noreferrer"
-              className={`font-serif text-xl font-bold leading-tight ${selectedNode.url ? 'text-blue-700 hover:underline' : 'text-slate-900'}`}
+              className={`font-serif text-xl font-bold leading-tight block ${selectedNode.url ? 'text-blue-700 hover:underline' : 'text-slate-900'}`}
             >
               {selectedNode.title}
             </a>
@@ -179,28 +273,38 @@ const App: React.FC = () => {
 
           <div className="flex gap-4 border-b border-slate-100 pb-4">
             <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Year</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{t.year}</span>
               <p className="text-sm font-medium text-slate-700">{selectedNode.year}</p>
             </div>
             <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Authors</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{t.authors}</span>
               <p className="text-sm font-medium text-slate-700">{selectedNode.authors.join(', ')}</p>
             </div>
           </div>
 
-          {/* Featured Contribution Section */}
-          <div className="p-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100 shadow-sm">
-            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1 mb-2">
-               <Lightbulb className="w-4 h-4" /> Core Innovation
+           {/* Comparison Highlight (One-Click Read) */}
+           {selectedNode.comparison && (
+             <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm">
+               <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1 mb-2">
+                  <Scale className="w-4 h-4" /> {t.difference}
+               </span>
+               <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                 {selectedNode.comparison}
+               </p>
+             </div>
+          )}
+
+          <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1 mb-2">
+               <Lightbulb className="w-3 h-3" /> {t.coreInnovation}
             </span>
-            <p className="text-sm text-slate-800 leading-relaxed font-semibold">{selectedNode.novelty}</p>
+            <p className="text-sm text-indigo-900 leading-relaxed font-medium">{selectedNode.novelty}</p>
           </div>
 
-          {/* New Evolutionary Context Section */}
           {selectedNode.evolutionSummary && (
              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-2">
-                  <GitBranch className="w-4 h-4" /> Context & Conclusion
+                  <GitBranch className="w-4 h-4" /> {t.placeInEvolution}
                </span>
                <p className="text-sm text-slate-600 leading-relaxed italic border-l-2 border-slate-300 pl-3">
                  "{selectedNode.evolutionSummary}"
@@ -208,29 +312,12 @@ const App: React.FC = () => {
              </div>
           )}
 
-          <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Abstract Summary</span>
-            <p className="text-sm text-slate-600 leading-relaxed">{selectedNode.summary}</p>
-          </div>
-
           {(selectedNode.dataset || selectedNode.benchmark || selectedNode.methodology) && (
              <div className="space-y-3 pt-2 border-t border-slate-100">
                 {selectedNode.methodology && (
                    <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Methodology</span>
+                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{t.methodology}</span>
                       <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.methodology}</span>
-                   </div>
-                )}
-                {selectedNode.dataset && (
-                   <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Dataset</span>
-                      <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.dataset}</span>
-                   </div>
-                )}
-                {selectedNode.benchmark && (
-                   <div className="text-sm">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Benchmark</span>
-                      <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{selectedNode.benchmark}</span>
                    </div>
                 )}
              </div>
@@ -244,7 +331,7 @@ const App: React.FC = () => {
                  rel="noopener noreferrer"
                  className="flex items-center justify-center gap-2 w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-lg transition-all shadow-sm group"
                >
-                 Read Full Paper
+                 {t.readPaper}
                  <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                </a>
             </div>
@@ -253,43 +340,10 @@ const App: React.FC = () => {
       ) : (
         <div className="text-center py-20 text-slate-400 flex flex-col items-center">
           <Network className="w-16 h-16 mb-4 opacity-10" />
-          <p className="text-sm font-medium">Select a node to view the evolutionary analysis.</p>
+          <p className="text-sm font-medium">{t.selectToView}</p>
         </div>
       )}
     </div>
-  );
-
-  const HistoryDrawer = () => (
-      <div className={`absolute left-0 top-0 h-full bg-white shadow-2xl z-30 transition-all duration-300 overflow-hidden flex flex-col border-r border-slate-200 ${showHistory ? 'w-80' : 'w-0 opacity-0'}`}>
-          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                  <History className="w-4 h-4" /> History
-              </h3>
-              <button onClick={() => setShowHistory(false)} className="p-1 hover:bg-slate-200 rounded">
-                  <X className="w-4 h-4 text-slate-500" />
-              </button>
-          </div>
-          <div className="overflow-y-auto flex-1 p-2 space-y-2">
-              {history.length === 0 && (
-                  <div className="text-center py-10 text-slate-400 text-sm">No recent searches.</div>
-              )}
-              {history.map(item => (
-                  <div key={item.id} onClick={() => loadHistoryItem(item)} className="p-3 rounded-lg border border-slate-100 hover:border-blue-300 hover:bg-blue-50 cursor-pointer group transition-all relative">
-                      <p className="text-sm font-medium text-slate-800 line-clamp-2 pr-6">{item.query}</p>
-                      <div className="flex items-center gap-1 mt-2 text-[10px] text-slate-400">
-                          <Clock className="w-3 h-3" />
-                          {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </div>
-                      <button 
-                        onClick={(e) => deleteHistoryItem(item.id, e)}
-                        className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                          <Trash2 className="w-3 h-3" />
-                      </button>
-                  </div>
-              ))}
-          </div>
-      </div>
   );
 
   const SettingsModal = () => (
@@ -297,112 +351,75 @@ const App: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 transform transition-all duration-300 scale-100 max-h-[90vh] overflow-y-auto">
            <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                 <Settings className="w-5 h-5 text-blue-600" /> API Settings
+                 <Settings className="w-5 h-5 text-blue-600" /> {t.settings}
               </h3>
               <button onClick={() => setShowSettings(false)} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg">
                  <X className="w-5 h-5" />
               </button>
            </div>
            
+           {/* Provider Tabs */}
            <div className="bg-slate-50 rounded-lg p-1 flex mb-6">
-              <button 
-                onClick={() => setProvider('gemini')}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'gemini' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                Google Gemini
-              </button>
-              <button 
-                onClick={() => setProvider('openai')}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'openai' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                OpenAI
-              </button>
-              <button 
-                onClick={() => setProvider('deepseek')}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${provider === 'deepseek' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                DeepSeek
-              </button>
+              {(['gemini', 'openai', 'deepseek'] as AiProvider[]).map(p => (
+                 <button 
+                   key={p}
+                   onClick={() => setProvider(p)}
+                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-all capitalize ${provider === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                 >
+                   {p}
+                 </button>
+              ))}
            </div>
 
            <div className="space-y-4">
-              
-              {/* GEMINI SETTINGS */}
               {provider === 'gemini' && (
                 <div>
                     <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex gap-3 mb-4">
                         <AlertCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                         <div className="text-sm text-blue-800">
                             <p className="font-semibold mb-1">Recommended</p>
-                            Gemini supports <b>PDF Uploads</b> and <b>Google Search</b> for real-time paper discovery.
+                            Supports PDF Analysis & Google Search.
                         </div>
                     </div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">Gemini API Key</label>
-                    <div className="relative">
-                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                        <input 
-                        type="password"
-                        value={tempGeminiKey}
-                        onChange={(e) => setTempGeminiKey(e.target.value)}
-                        placeholder="AIzaSy..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-slate-800 font-mono text-sm"
-                        />
-                    </div>
+                    <input 
+                      type="password"
+                      value={tempGeminiKey}
+                      onChange={(e) => setTempGeminiKey(e.target.value)}
+                      placeholder="AIzaSy..."
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-800 font-mono text-sm"
+                    />
                 </div>
               )}
-
-              {/* OPENAI SETTINGS */}
               {provider === 'openai' && (
                 <div>
-                     <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 flex gap-3 mb-4">
-                        <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                        <div className="text-sm text-amber-800">
-                            <p className="font-semibold mb-1">Text Only</p>
-                            OpenAI mode currently supports topic research. PDF upload is disabled in this mode.
-                        </div>
-                    </div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">OpenAI API Key</label>
-                    <div className="relative">
-                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                        <input 
-                        type="password"
-                        value={tempOpenaiKey}
-                        onChange={(e) => setTempOpenaiKey(e.target.value)}
-                        placeholder="sk-proj-..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none text-slate-800 font-mono text-sm"
-                        />
-                    </div>
+                    <input 
+                      type="password"
+                      value={tempOpenaiKey}
+                      onChange={(e) => setTempOpenaiKey(e.target.value)}
+                      placeholder="sk-proj-..."
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none text-slate-800 font-mono text-sm"
+                    />
                 </div>
               )}
-
-              {/* DEEPSEEK SETTINGS */}
               {provider === 'deepseek' && (
                 <div>
-                     <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex gap-3 mb-4">
-                        <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-                        <div className="text-sm text-indigo-800">
-                            <p className="font-semibold mb-1">Economic Choice</p>
-                             DeepSeek V3 is powerful and cost-effective. Supports text research only.
-                        </div>
-                    </div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">DeepSeek API Key</label>
-                    <div className="relative">
-                        <Key className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                        <input 
-                        type="password"
-                        value={tempDeepseekKey}
-                        onChange={(e) => setTempDeepseekKey(e.target.value)}
-                        placeholder="sk-..."
-                        className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-slate-800 font-mono text-sm"
-                        />
-                    </div>
+                    <input 
+                      type="password"
+                      value={tempDeepseekKey}
+                      onChange={(e) => setTempDeepseekKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 font-mono text-sm"
+                    />
                 </div>
               )}
 
               <div className="pt-2">
                 <button 
                     onClick={handleSaveSettings}
-                    className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-lg shadow-slate-900/10 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                     <Save className="w-4 h-4" /> Save Configuration
                 </button>
@@ -415,41 +432,38 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 overflow-hidden font-sans">
       {/* Header */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-8 justify-between shrink-0 z-30 shadow-sm relative">
-        <div className="flex items-center gap-2 md:gap-4">
+      <header className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-8 justify-between shrink-0 z-30 shadow-sm">
+        <div className="flex items-center gap-4">
           <button 
             onClick={() => setShowHistory(!showHistory)} 
-            className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors relative"
-            title="Search History"
+            className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
           >
               <History className="w-5 h-5" />
           </button>
           
-          <div className="h-6 w-px bg-slate-200 mx-1"></div>
-
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center">
                 <Network className="w-5 h-5 text-white" />
             </div>
-            <div>
-                <h1 className="font-bold text-xl tracking-tight text-slate-900 hidden md:block">PaperTree</h1>
-                <p className="text-[10px] text-slate-500 font-medium tracking-wide uppercase hidden md:block">Academic Evolution Map</p>
-            </div>
+            <h1 className="font-bold text-xl tracking-tight text-slate-900 hidden md:block">{t.appTitle}</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
              <button
+                onClick={toggleLanguage}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+             >
+                 <Languages className="w-4 h-4" />
+                 {language === 'en' ? 'EN' : '中'}
+             </button>
+
+             <button
                onClick={() => setShowSettings(true)}
-               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${getCurrentKey() ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50 hover:bg-red-100 animate-pulse'}`}
+               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${getCurrentKey() ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50'}`}
              >
                 <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">
-                    {provider === 'gemini' && "Gemini"}
-                    {provider === 'openai' && "OpenAI"}
-                    {provider === 'deepseek' && "DeepSeek"}
-                </span>
-                <span className={`w-2 h-2 rounded-full ${getCurrentKey() ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                <span className="hidden sm:inline capitalize">{provider}</span>
              </button>
         </div>
       </header>
@@ -458,57 +472,77 @@ const App: React.FC = () => {
       <main className="flex-1 relative overflow-hidden flex flex-col">
         <div className="flex h-full w-full relative">
           
-          <HistoryDrawer />
+          <div className={`absolute left-0 top-0 h-full bg-white shadow-2xl z-30 transition-all duration-300 overflow-hidden flex flex-col border-r border-slate-200 ${showHistory ? 'w-80' : 'w-0 opacity-0'}`}>
+              <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2"><History className="w-4 h-4" /> {t.history}</h3>
+                  <button onClick={() => setShowHistory(false)}><X className="w-4 h-4 text-slate-500" /></button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-2 space-y-2">
+                  {history.map(item => (
+                      <div key={item.id} onClick={() => loadHistoryItem(item)} className="p-3 rounded-lg border border-slate-100 hover:border-blue-300 hover:bg-blue-50 cursor-pointer group relative">
+                          <p className="text-sm font-medium text-slate-800 line-clamp-2 pr-6">{item.query}</p>
+                          <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                              <span className={`px-1 rounded ${item.mode === 'deep' ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-200 text-slate-600'}`}>{item.mode}</span>
+                              <span className="bg-slate-200 text-slate-600 px-1 rounded uppercase">{item.language || 'zh'}</span>
+                              <Clock className="w-3 h-3" />
+                              {new Date(item.timestamp).toLocaleDateString()}
+                          </div>
+                          <button onClick={(e) => deleteHistoryItem(item.id, e)} className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100">
+                              <Trash2 className="w-3 h-3" />
+                          </button>
+                      </div>
+                  ))}
+              </div>
+          </div>
+
           <SettingsModal />
 
-          {/* Input Overlay */}
-          <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 z-10 w-full max-w-3xl px-4 ${graphData.nodes.length > 0 ? 'top-4' : 'top-[30%]'}`}>
-            <div className={`bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl rounded-2xl p-2 transition-all duration-500`}>
+          {/* Search Bar / Minimized Toggle */}
+          <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 z-10 w-full max-w-3xl px-4 ${isSearchExpanded ? 'top-[25%] opacity-100 pointer-events-auto' : '-top-20 opacity-0 pointer-events-none'}`}>
+            <div className={`bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl rounded-2xl p-3 transition-all duration-500`}>
                 {graphData.nodes.length === 0 && (
-                   <div className="text-center pt-8 pb-6">
-                       <h2 className="text-2xl font-bold text-slate-800 mb-3">Map the Evolution of Ideas</h2>
-                       <p className="text-slate-500 max-w-md mx-auto">
-                           Using <span className="font-bold text-slate-800 capitalize">{provider}</span>. 
-                           {provider === 'gemini' ? (
-                               <span> Features <span className="text-blue-600 font-medium">Google Search</span> & <span className="text-blue-600 font-medium">PDF Support</span>.</span>
-                           ) : (
-                               <span> Generates maps based on internal knowledge (Text only).</span>
-                           )}
-                       </p>
+                   <div className="text-center pt-6 pb-6">
+                       <h2 className="text-2xl font-bold text-slate-800 mb-2">{t.evolutionMap}</h2>
+                       <p className="text-slate-500 text-sm">{t.subtitle}</p>
                    </div>
                 )}
 
-                <div className="flex flex-col sm:flex-row gap-2 p-2">
+                {/* Mode Toggles */}
+                <div className="flex justify-center mb-3">
+                   <div className="bg-slate-100 p-1 rounded-lg flex">
+                      <button 
+                        onClick={() => setMode('fast')}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${mode === 'fast' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                         <Zap className="w-3 h-3" /> {t.fastScan}
+                      </button>
+                      <button 
+                        onClick={() => setMode('deep')}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold flex items-center gap-2 transition-all ${mode === 'deep' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                         <BrainCircuit className="w-3 h-3" /> {t.deepSearch}
+                      </button>
+                   </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="flex-1 relative group">
-                    {provider === 'gemini' ? (
-                        <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-                    ) : (
-                        <Bot className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                    )}
+                    <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-slate-400" />
                     <input 
                       type="text" 
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder={provider === 'gemini' ? "Enter a topic or paste URLs..." : "Enter a research topic..."}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-blue-100 outline-none text-slate-800 placeholder:text-slate-400 transition-all font-medium"
+                      placeholder={t.searchPlaceholder}
+                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border-none rounded-xl focus:ring-2 focus:ring-blue-100 outline-none text-slate-800 font-medium"
                     />
                   </div>
                   
                   {provider === 'gemini' && (
                     <div className="relative shrink-0">
-                        <input 
-                        type="file" 
-                        id="pdf-upload"
-                        accept=".pdf,.txt,.md"
-                        className="hidden"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        />
-                        <label 
-                        htmlFor="pdf-upload"
-                        className={`flex items-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}
-                        >
-                        <Upload className="w-5 h-5" />
-                        <span className="hidden sm:inline">{file ? 'File Selected' : 'Upload PDF'}</span>
+                        <input type="file" id="pdf-upload" accept=".pdf,.txt" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                        <label htmlFor="pdf-upload" className={`flex items-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}>
+                            <Upload className="w-5 h-5" />
+                            <span className="hidden sm:inline">{file ? 'Selected' : 'PDF'}</span>
                         </label>
                     </div>
                   )}
@@ -516,29 +550,40 @@ const App: React.FC = () => {
                   <button 
                     onClick={handleIngest}
                     disabled={loading || (!input && !file)}
-                    className="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl shadow-lg shadow-slate-900/20 transition-all disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2 shrink-0"
+                    className={`px-6 py-3 font-medium rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 shrink-0 ${mode === 'deep' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-200'}`}
                   >
                     {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Sparkles className="w-5 h-5 text-yellow-300" />}
-                    <span>Generate</span>
+                    <span>{mode === 'deep' ? t.deepSearchButton : t.mapButton}</span>
                   </button>
                 </div>
             </div>
           </div>
 
-          {/* Graph Visualization Area */}
+          {/* Re-open Search Button */}
+          {!isSearchExpanded && graphData.nodes.length > 0 && (
+             <button 
+               onClick={() => setIsSearchExpanded(true)}
+               className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-white/90 backdrop-blur border border-slate-200 shadow-lg px-4 py-2 rounded-full flex items-center gap-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all hover:scale-105"
+             >
+                <Search className="w-4 h-4 text-blue-500" />
+                {t.newAnalysis}
+             </button>
+          )}
+
           <div className="flex-1 h-full w-full bg-slate-50">
               {graphData.nodes.length > 0 ? (
-                <GraphView data={graphData} onNodeSelect={setSelectedNode} />
+                <GraphView 
+                  data={graphData} 
+                  onNodeSelect={setSelectedNode} 
+                  searchQuery={file ? file.name : input} 
+                  language={language}
+                  translations={t}
+                />
               ) : (
-                !loading && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-[600px] h-[600px] bg-gradient-to-tr from-blue-100/40 to-purple-100/40 rounded-full blur-3xl opacity-50" />
-                  </div>
-                )
+                !loading && <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-50"><div className="w-[500px] h-[500px] bg-gradient-to-tr from-blue-100 to-indigo-50 rounded-full blur-3xl" /></div>
               )}
           </div>
 
-          {/* Sidebar Details */}
           {selectedNode && <Sidebar />}
         </div>
       </main>
