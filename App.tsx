@@ -241,20 +241,22 @@ const App: React.FC = () => {
     }
   };
 
+  // Improved Mobile Sidebar (Bottom Sheet style on mobile, Sidebar on desktop)
   const Sidebar = () => (
-    <div className="w-96 h-full border-l border-slate-200 bg-white p-6 overflow-y-auto absolute right-0 top-0 shadow-2xl z-20 flex flex-col">
-      <div className="flex justify-between items-start mb-6">
+    <div className="fixed md:absolute inset-x-0 bottom-0 md:top-0 md:left-auto md:right-0 md:w-96 h-[85vh] md:h-full bg-white md:border-l border-t md:border-t-0 border-slate-200 p-6 overflow-y-auto shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] md:shadow-2xl z-40 rounded-t-3xl md:rounded-none flex flex-col transition-transform duration-300 transform translate-y-0">
+      <div className="flex justify-between items-start mb-6 shrink-0">
         <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
            <FileText className="w-5 h-5 text-slate-500" />
            {language === 'en' ? 'Details' : '详细信息'}
         </h3>
-        <button onClick={() => setSelectedNode(null)} className="p-1 hover:bg-slate-100 rounded transition-colors">
-          <X className="w-5 h-5 text-slate-500" />
+        <button onClick={() => setSelectedNode(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors bg-slate-50">
+          <ChevronDown className="w-5 h-5 text-slate-500 md:hidden" />
+          <X className="w-5 h-5 text-slate-500 hidden md:block" />
         </button>
       </div>
 
       {selectedNode ? (
-        <div className="space-y-6 flex-1">
+        <div className="space-y-6 flex-1 pb-10 md:pb-0">
           <div>
             {selectedNode.category && (
                 <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-100 text-blue-700 mb-2">
@@ -282,7 +284,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-           {/* Comparison Highlight (One-Click Read) */}
            {selectedNode.comparison && (
              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm">
                <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1 mb-2">
@@ -358,7 +359,6 @@ const App: React.FC = () => {
               </button>
            </div>
            
-           {/* Provider Tabs */}
            <div className="bg-slate-50 rounded-lg p-1 flex mb-6">
               {(['gemini', 'openai', 'deepseek'] as AiProvider[]).map(p => (
                  <button 
@@ -432,8 +432,8 @@ const App: React.FC = () => {
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-50 overflow-hidden font-sans">
       {/* Header */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-8 justify-between shrink-0 z-30 shadow-sm">
-        <div className="flex items-center gap-4">
+      <header className="h-16 bg-white border-b border-slate-200 flex items-center px-4 md:px-8 justify-between shrink-0 z-30 shadow-sm relative">
+        <div className="flex items-center gap-2 md:gap-4">
           <button 
             onClick={() => setShowHistory(!showHistory)} 
             className="p-2 hover:bg-slate-100 rounded-lg text-slate-600 transition-colors"
@@ -449,18 +449,18 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
              <button
                 onClick={toggleLanguage}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+                className="flex items-center gap-2 px-2 md:px-3 py-2 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
              >
                  <Languages className="w-4 h-4" />
-                 {language === 'en' ? 'EN' : '中'}
+                 <span className="hidden md:inline">{language === 'en' ? 'EN' : '中'}</span>
              </button>
 
              <button
                onClick={() => setShowSettings(true)}
-               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${getCurrentKey() ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50'}`}
+               className={`flex items-center gap-2 px-2 md:px-3 py-2 rounded-lg text-sm font-medium transition-colors ${getCurrentKey() ? 'text-slate-600 hover:bg-slate-100' : 'text-red-600 bg-red-50'}`}
              >
                 <Settings className="w-4 h-4" />
                 <span className="hidden sm:inline capitalize">{provider}</span>
@@ -472,7 +472,8 @@ const App: React.FC = () => {
       <main className="flex-1 relative overflow-hidden flex flex-col">
         <div className="flex h-full w-full relative">
           
-          <div className={`absolute left-0 top-0 h-full bg-white shadow-2xl z-30 transition-all duration-300 overflow-hidden flex flex-col border-r border-slate-200 ${showHistory ? 'w-80' : 'w-0 opacity-0'}`}>
+          {/* History Panel - Full width on mobile, Sidebar on desktop */}
+          <div className={`absolute left-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 overflow-hidden flex flex-col border-r border-slate-200 ${showHistory ? 'w-full md:w-80' : 'w-0'}`}>
               <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                   <h3 className="font-bold text-slate-800 flex items-center gap-2"><History className="w-4 h-4" /> {t.history}</h3>
                   <button onClick={() => setShowHistory(false)}><X className="w-4 h-4 text-slate-500" /></button>
@@ -497,12 +498,12 @@ const App: React.FC = () => {
 
           <SettingsModal />
 
-          {/* Search Bar / Minimized Toggle */}
-          <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 z-10 w-full max-w-3xl px-4 ${isSearchExpanded ? 'top-[25%] opacity-100 pointer-events-auto' : '-top-20 opacity-0 pointer-events-none'}`}>
-            <div className={`bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl rounded-2xl p-3 transition-all duration-500`}>
+          {/* Search Bar / Minimized Toggle - Optimized positioning for mobile */}
+          <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-500 z-10 w-full max-w-3xl px-4 ${isSearchExpanded ? 'top-[15%] md:top-[25%] opacity-100 pointer-events-auto' : '-top-40 opacity-0 pointer-events-none'}`}>
+            <div className={`bg-white/95 backdrop-blur-md border border-slate-200 shadow-xl rounded-2xl p-4 md:p-3 transition-all duration-500`}>
                 {graphData.nodes.length === 0 && (
-                   <div className="text-center pt-6 pb-6">
-                       <h2 className="text-2xl font-bold text-slate-800 mb-2">{t.evolutionMap}</h2>
+                   <div className="text-center pt-2 pb-4 md:pt-6 md:pb-6">
+                       <h2 className="text-xl md:text-2xl font-bold text-slate-800 mb-2">{t.evolutionMap}</h2>
                        <p className="text-slate-500 text-sm">{t.subtitle}</p>
                    </div>
                 )}
@@ -540,9 +541,9 @@ const App: React.FC = () => {
                   {provider === 'gemini' && (
                     <div className="relative shrink-0">
                         <input type="file" id="pdf-upload" accept=".pdf,.txt" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                        <label htmlFor="pdf-upload" className={`flex items-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}>
+                        <label htmlFor="pdf-upload" className={`flex items-center justify-center gap-2 px-5 py-3 border-none rounded-xl cursor-pointer transition-all font-medium h-full w-full sm:w-auto ${file ? 'text-blue-700 bg-blue-50 ring-1 ring-blue-100' : 'text-slate-600 bg-slate-100 hover:bg-slate-200'}`}>
                             <Upload className="w-5 h-5" />
-                            <span className="hidden sm:inline">{file ? 'Selected' : 'PDF'}</span>
+                            <span className="sm:inline">{file ? 'Selected' : 'PDF'}</span>
                         </label>
                     </div>
                   )}
@@ -570,7 +571,7 @@ const App: React.FC = () => {
              </button>
           )}
 
-          <div className="flex-1 h-full w-full bg-slate-50">
+          <div className="flex-1 h-full w-full bg-slate-50 touch-none">
               {graphData.nodes.length > 0 ? (
                 <GraphView 
                   data={graphData} 

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as d3 from 'd3';
-import { Download } from 'lucide-react';
+import { Download, Info, ChevronUp, ChevronDown } from 'lucide-react';
 import { GraphData, PaperNode, PaperLink, RelationType } from '../types';
 
 interface GraphViewProps {
@@ -16,6 +16,14 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [hoverNode, setHoverNode] = useState<{ x: number, y: number, node: PaperNode } | null>(null);
+  const [showLegend, setShowLegend] = useState(true);
+
+  // Check for mobile to auto-collapse legend
+  useEffect(() => {
+     if (window.innerWidth < 768) {
+         setShowLegend(false);
+     }
+  }, []);
 
   // Use ResizeObserver for robust dimension tracking
   useEffect(() => {
@@ -45,8 +53,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
         const exact = nodes.find(n => n.title.toLowerCase().includes(lowerQ));
         if (exact) coreNodeId = exact.id;
         else {
-             // If no title match, maybe find most connected?
-             // For now, let's stick to title match or fallback to first node if PDF
              if (searchQuery.includes(".pdf")) coreNodeId = nodes[0].id;
         }
     }
@@ -63,17 +69,14 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
             );
 
             if (linkToCore) {
-                if (linkToCore.type === RelationType.CONFLICT) return "#94a3b8"; // Gray for Conflict (Requested)
-                if (linkToCore.type === RelationType.INHERITANCE || linkToCore.type === RelationType.INSPIRATION) return "#f472b6"; // Pastel Pink for Supporting (Requested)
+                if (linkToCore.type === RelationType.CONFLICT) return "#94a3b8"; 
+                if (linkToCore.type === RelationType.INHERITANCE || linkToCore.type === RelationType.INSPIRATION) return "#f472b6"; 
             }
         }
         
-        // Default cluster coloring if no specific relation found
-        // Use a more muted palette for non-highlighted nodes
         return "#e2e8f0"; 
     };
     
-    // Fallback category color scale if we want to use it for 'other' nodes
     const categories = Array.from(new Set(nodes.map(d => d.category || 'Other')));
     const categoryScale = d3.scaleOrdinal(d3.schemeSet3).domain(categories);
 
@@ -136,7 +139,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
 
     // Link Paths
     const linkPath = linkGroup.selectAll("path").data(links).enter().append("path")
-      .attr("id", d => d.id) // Important for textPath
+      .attr("id", d => d.id) 
       .attr("fill", "none").attr("stroke-width", 2)
       .attr("stroke", d => {
         if (d.type === RelationType.INHERITANCE) return "#3b82f6";
@@ -148,7 +151,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
       .attr("marker-end", d => `url(#arrow-${d.type})`)
       .attr("opacity", 0.6);
 
-    // Link Labels (Summary text on line)
+    // Link Labels
     const linkText = linkGroup.selectAll("text").data(links).enter().append("text")
       .attr("dy", -5)
       .append("textPath")
@@ -160,7 +163,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
       .style("fill", "#1e293b") 
       .style("fill-opacity", 1)
       .style("paint-order", "stroke")
-      .style("stroke", "#ffffff") // Strong white halo
+      .style("stroke", "#ffffff") 
       .style("stroke-width", "4px")
       .style("stroke-linecap", "round")
       .style("stroke-linejoin", "round")
@@ -170,7 +173,7 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
     const node = g.append("g").selectAll("g").data(nodes).enter().append("g")
       .call(d3.drag<SVGGElement, PaperNode>().on("start", dragstarted).on("drag", dragged).on("end", dragended));
 
-    // Node Interaction Events
+    // Node Interaction
     node.on("mouseover", (event, d) => {
          setHoverNode({ x: event.pageX, y: event.pageY, node: d });
          d3.select(event.currentTarget).select("circle").attr("stroke", "#3b82f6").attr("stroke-width", 4);
@@ -181,11 +184,9 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
       })
       .on("click", (e, d) => { e.stopPropagation(); onNodeSelect(d); });
 
-    // Node Circle
     node.append("circle")
       .attr("r", 24)
       .attr("fill", d => {
-          // If core logic applies, use it. Otherwise use category scale.
           if (coreNodeId) return getNodeColor(d);
           return categoryScale(d.category || 'Other') as string;
       })
@@ -193,7 +194,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
       .attr("stroke-width", 3)
       .attr("class", "cursor-pointer drop-shadow-md transition-all");
 
-    // Inner Icon/Text (Year)
     node.append("text")
         .text(d => d.year.toString().slice(-2))
         .attr("dy", 4)
@@ -203,7 +203,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
         .attr("font-weight", "bold")
         .attr("pointer-events", "none");
 
-    // Title Label
     node.append("text")
       .text(d => d.title.length > 20 ? d.title.substring(0, 20) + '...' : d.title)
       .attr("dy", 38)
@@ -213,7 +212,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
       .attr("fill", "#334155")
       .style("text-shadow", "0 1px 2px white");
 
-    // Category Label (Tiny pill above)
     node.append("rect")
       .attr("x", -24).attr("y", -38).attr("width", 48).attr("height", 14).attr("rx", 7)
       .attr("fill", "#f1f5f9").attr("opacity", 0.85);
@@ -253,8 +251,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
 
   const handleExport = () => {
     if (!svgRef.current) return;
-    
-    // Serialize SVG
     const serializer = new XMLSerializer();
     const svgStr = serializer.serializeToString(svgRef.current);
     const canvas = document.createElement("canvas");
@@ -263,13 +259,12 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
     const ctx = canvas.getContext("2d");
     
     const img = new Image();
-    // Helper to decode unicode for SVG
     const svgBlob = new Blob([svgStr], {type: "image/svg+xml;charset=utf-8"});
     const url = URL.createObjectURL(svgBlob);
     
     img.onload = () => {
         if(ctx) {
-            ctx.fillStyle = "#f8fafc"; // background
+            ctx.fillStyle = "#f8fafc"; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0);
             const pngUrl = canvas.toDataURL("image/png");
@@ -286,17 +281,30 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
   };
 
   return (
-    <div ref={wrapperRef} className="w-full h-full bg-slate-50 relative overflow-hidden rounded-xl border border-slate-200 shadow-inner group">
-      <div className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-3 rounded-lg text-xs shadow-sm border border-slate-200 flex flex-col gap-2 pointer-events-none">
-        <h4 className="font-bold text-slate-700">{translations.legend}</h4>
-        <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Inheritance (Blue)</div>
-        <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span> Conflict (Red)</div>
-        <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Inspiration (Green)</div>
-        {searchQuery && (
-            <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
-                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-400 border border-white shadow-sm"></span> Core Topic</div>
-                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-pink-300 border border-white shadow-sm"></span> Support/Proof</div>
-                 <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-slate-400 border border-white shadow-sm"></span> Contrary</div>
+    <div ref={wrapperRef} className="w-full h-full bg-slate-50 relative overflow-hidden rounded-xl border border-slate-200 shadow-inner group touch-none">
+      
+      {/* Collapsible Legend */}
+      <div className={`absolute top-4 left-4 z-10 bg-white/90 backdrop-blur rounded-lg text-xs shadow-sm border border-slate-200 transition-all duration-300 pointer-events-auto ${showLegend ? 'p-3' : 'p-2'}`}>
+        <div className="flex items-center justify-between gap-4 mb-2 cursor-pointer" onClick={() => setShowLegend(!showLegend)}>
+             {showLegend && <h4 className="font-bold text-slate-700">{translations.legend}</h4>}
+             {!showLegend && <Info className="w-4 h-4 text-slate-500" />}
+             <button className="text-slate-400 hover:text-slate-600">
+                 {showLegend ? <ChevronUp className="w-3 h-3" /> : null}
+             </button>
+        </div>
+        
+        {showLegend && (
+            <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Inheritance (Blue)</div>
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span> Conflict (Red)</div>
+                <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> Inspiration (Green)</div>
+                {searchQuery && (
+                    <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-yellow-400 border border-white shadow-sm"></span> Core Topic</div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-pink-300 border border-white shadow-sm"></span> Support/Proof</div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-slate-400 border border-white shadow-sm"></span> Contrary</div>
+                    </div>
+                )}
             </div>
         )}
       </div>
@@ -312,10 +320,10 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
         <Download className="w-5 h-5" />
       </button>
 
-      {/* Hover Tooltip */}
+      {/* Hover Tooltip - Only show if not on touch device (approx) or if explicity requested. For now, keep as hover but minimal styling */}
       {hoverNode && (
           <div 
-            className="absolute z-50 bg-white/95 backdrop-blur-sm p-4 rounded-xl shadow-xl border border-slate-200 w-72 pointer-events-none transform -translate-x-1/2 -translate-y-[120%]"
+            className="hidden md:block absolute z-50 bg-white/95 backdrop-blur-sm p-4 rounded-xl shadow-xl border border-slate-200 w-72 pointer-events-none transform -translate-x-1/2 -translate-y-[120%]"
             style={{ left: hoverNode.x - (wrapperRef.current?.getBoundingClientRect().left || 0), top: hoverNode.y - (wrapperRef.current?.getBoundingClientRect().top || 0) }}
           >
              <div className="flex items-start justify-between mb-2">
@@ -324,9 +332,6 @@ const GraphView: React.FC<GraphViewProps> = ({ data, onNodeSelect, searchQuery, 
              </div>
              <h3 className="font-bold text-slate-900 leading-tight mb-2">{hoverNode.node.title}</h3>
              <p className="text-xs text-slate-600 line-clamp-4 leading-relaxed">{hoverNode.node.summary}</p>
-             <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 text-[10px] text-slate-400">
-                <span className="font-medium text-slate-600">{hoverNode.node.authors[0]} et al.</span>
-             </div>
           </div>
       )}
     </div>
